@@ -1,0 +1,6 @@
+{
+  "name": "InstaFlow Pro",
+  "description": "High-speed Instagram profile viewer and bulk media downloader with smart categorization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["media_download", "zip_generation", "profile_analytics"]
+}
