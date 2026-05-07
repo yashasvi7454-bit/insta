@@ -14,20 +14,50 @@ async function startServer() {
 
   app.use(express.json());
 
+  // API Route to get username suggestions
+  app.get("/api/search-suggestions", async (req, res) => {
+    const { q } = req.query;
+    if (!q || typeof q !== 'string' || q.length < 2) return res.json({ users: [] });
+
+    try {
+      const response = await axios.get(`https://www.instagram.com/web/search/topsearch/?context=blended&query=${q}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "X-IG-App-ID": "936619743392459"
+        },
+        timeout: 3000
+      });
+
+      const users = response.data.users?.map((item: any) => ({
+        username: item.user.username,
+        fullName: item.user.full_name,
+        avatar: item.user.profile_pic_url,
+        isVerified: item.user.is_verified
+      })) || [];
+
+      res.json({ users });
+    } catch (error) {
+      // Return empty instead of error for suggestions to prevent UI flicker
+      res.json({ users: [] });
+    }
+  });
+
   // API Route to fetch Instagram Profile Data
   app.post("/api/fetch-profile", async (req, res) => {
     const { url } = req.body;
+    if (!url) return res.status(400).json({ error: "Username or URL is required" });
+
     try {
-      // Basic extraction of username from URL
-      const usernameMatch = url.match(/(?:instagram\.com\/|instagr\.am\/)([a-zA-Z0-9_.]+)/);
-      if (!usernameMatch) {
-         return res.status(400).json({ error: "Invalid Instagram URL format" });
+      // Extract username from URL or use as-is if it's just a handle
+      let username = url.trim().replace(/^@/, "");
+      const urlMatch = username.match(/(?:instagram\.com\/|instagr\.am\/)([a-zA-Z0-9_.]+)/);
+      if (urlMatch) {
+         username = urlMatch[1];
       }
-      const username = usernameMatch[1].replace(/\/$/, ""); // Remove trailing slash if any
+      username = username.split('?')[0].replace(/\/$/, ""); 
 
       let profileData = null;
       let mediaData = [];
-      let isSimulated = false;
 
       // Real extraction attempt
       try {
@@ -35,13 +65,25 @@ async function startServer() {
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "*/*",
-            "X-IG-App-ID": "936619743392459"
+            "X-IG-App-ID": "936619743392459",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin"
           },
-          timeout: 4000
+          timeout: 5000
         });
 
         if (response.data?.graphql?.user) {
           const user = response.data.graphql.user;
+          
+          if (user.is_private) {
+            return res.status(403).json({ 
+              error: "PRIVATE_ACCOUNT", 
+              message: `@${username} is a private account. Profile details and media are restricted by Instagram.`,
+              username 
+            });
+          }
+
           profileData = {
             username: user.username,
             fullName: user.full_name,
@@ -61,45 +103,60 @@ async function startServer() {
             likes: edge.node.edge_liked_by.count,
             comments: edge.node.edge_media_to_comment.count
           }));
+          
+          return res.json({ profile: profileData, media: mediaData });
+        } else {
+           throw new Error("NOT_FOUND");
         }
-      } catch (e) {
-        console.warn(`Scraping blocked for ${username}, enabling Simulation Mode.`);
-        isSimulated = true;
-      }
+      } catch (e: any) {
+        const status = e.response?.status;
+        
+        if (status === 404) {
+          return res.status(404).json({ error: "USER_NOT_FOUND", message: `Instagram user "@${username}" was not found.` });
+        }
+        
+        if (status === 429) {
+          return res.status(429).json({ 
+            error: "RATE_LIMITED", 
+            message: "Instagram is temporarily blocking requests (Rate Limited). Enabling Intelligent Simulation Mode to show preview.",
+            username
+          });
+        }
 
-      // If scraping failed or returned nothing, use the Enhanced Simulator
-      if (isSimulated || !profileData) {
+        // Enhanced Simulation Mode / Fallback
+        console.warn(`Real fetch failed (Status: ${status || 'Timeout'}). Using high-fidelity simulation.`);
+        
         profileData = {
           username: username,
           fullName: username.split('.').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' '),
-          bio: `Visual Content Creator & Digital Architect. \nCreative Director at @StudioNova. \n📍 Living in the details.`,
-          avatar: `https://ui-avatars.com/api/?name=${username}&background=EB455F&color=fff&size=200`,
-          followers: 42800,
-          following: 842,
-          postCount: 24,
-          isSimulated: true
+          bio: `Digital Creator • Visual Storyteller\nSharing perspectives through a unique lens.\n✨ Explore more at the link below.`,
+          avatar: `https://ui-avatars.com/api/?name=${username}&background=random&color=fff&size=200`,
+          followers: Math.floor(Math.random() * 50000) + 5000,
+          following: Math.floor(Math.random() * 1000) + 100,
+          postCount: 15,
+          isSimulated: true,
+          simReason: status === 429 ? "Rate limited by Instagram" : "Access Restricted"
         };
 
-        mediaData = Array.from({ length: 18 }).map((_, i) => {
-          const type = i < 6 ? 'Story' : (i % 3 === 0 ? 'Reel' : 'Post');
+        mediaData = Array.from({ length: 15 }).map((_, i) => {
+          const type = i % 4 === 0 ? 'Reel' : 'Post';
           return {
             id: `sim_${i}`,
             url: `https://picsum.photos/seed/${username}_${i}/800/1000`,
-            isVideo: type !== 'Post',
-            videoUrl: type !== 'Post' ? "https://www.w3schools.com/html/mov_bbb.mp4" : null,
-            caption: `Captured moment #${i} by ${username} #Photography #DigitalArt`,
+            isVideo: type === 'Reel',
+            videoUrl: type === 'Reel' ? "https://www.w3schools.com/html/mov_bbb.mp4" : null,
+            caption: `A beautiful capture from @${username}'s collection. #${type.toLowerCase()}`,
             type: type,
-            likes: Math.floor(Math.random() * 5000) + 100,
-            comments: Math.floor(Math.random() * 200) + 10
+            likes: Math.floor(Math.random() * 8000),
+            comments: Math.floor(Math.random() * 300)
           };
         });
+
+        return res.json({ profile: profileData, media: mediaData, warning: "Using Simulation Mode due to Instagram access restrictions." });
       }
-
-      return res.json({ profile: profileData, media: mediaData });
-
     } catch (error) {
       console.error(error);
-      res.status(500).json({ error: "Internal processing error" });
+      res.status(500).json({ error: "INTERNAL_ERROR", message: "Check server logs for details." });
     }
   });
 
