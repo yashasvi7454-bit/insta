@@ -25,10 +25,11 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // Utility to format numbers
-const formatNumber = (num: number) => {
+const formatNumber = (num: any) => {
+  if (typeof num !== 'number') return '0';
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-  return num.toString();
+  return (num || 0).toString();
 };
 
 export default function App() {
@@ -261,10 +262,12 @@ export default function App() {
           {error && (
             <div className="m-6 p-6 bg-red-500/10 border border-red-500/20 text-red-100 rounded-xl flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-red-500 text-black rounded-lg flex items-center justify-center font-bold font-mono">!</div>
-                <h3 className="font-bold uppercase tracking-tight text-red-500">{error.code.replace(/_/g, ' ')}</h3>
+                <div className="w-8 h-8 bg-red-500 text-white rounded-lg flex items-center justify-center font-bold font-mono">!</div>
+                <h3 className="font-bold uppercase tracking-tight text-red-500">
+                  {typeof error.code === 'string' ? error.code.replace(/_/g, ' ') : 'ERROR'}
+                </h3>
               </div>
-              <p className="text-sm text-zinc-300 leading-relaxed">{error.message}</p>
+              <p className="text-sm text-zinc-300 leading-relaxed">{error.message || 'An unexpected error occurred.'}</p>
               {error.code === 'PRIVATE_ACCOUNT' && (
                 <p className="text-xs text-zinc-500 mt-2 px-3 py-2 bg-black/30 rounded border border-zinc-800">Note: Private accounts cannot be accessed via public search agents. The user must be public.</p>
               )}
@@ -272,7 +275,7 @@ export default function App() {
           )}
 
           {!profile && !loading && !error && (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-900/50 to-transparent">
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-gradient-to-b from-zinc-900/40 to-transparent">
               <div className="w-16 h-16 border-2 border-zinc-800 rounded-2xl flex items-center justify-center mb-6 text-zinc-700">
                 <Layers size={32} />
               </div>

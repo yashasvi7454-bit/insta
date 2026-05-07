@@ -28,16 +28,19 @@ async function startServer() {
         timeout: 3000
       });
 
-      const users = response.data.users?.map((item: any) => ({
-        username: item.user.username,
-        fullName: item.user.full_name,
-        avatar: item.user.profile_pic_url,
-        isVerified: item.user.is_verified
-      })) || [];
+      const users = response.data.users?.map((item: any) => {
+        const u = item?.user;
+        if (!u) return null;
+        return {
+          username: u.username,
+          fullName: u.full_name,
+          avatar: u.profile_pic_url,
+          isVerified: u.is_verified
+        };
+      }).filter(Boolean) || [];
 
       res.json({ users });
     } catch (error) {
-      // Return empty instead of error for suggestions to prevent UI flicker
       res.json({ users: [] });
     }
   });
@@ -79,29 +82,29 @@ async function startServer() {
           if (user.is_private) {
             return res.status(403).json({ 
               error: "PRIVATE_ACCOUNT", 
-              message: `@${username} is a private account. Profile details and media are restricted by Instagram.`,
+              message: `@${username} is a private account. Instagram prevents public access to private data.`,
               username 
             });
           }
 
           profileData = {
-            username: user.username,
-            fullName: user.full_name,
-            bio: user.biography,
-            avatar: user.profile_pic_url_hd,
-            followers: user.edge_followed_by.count,
-            following: user.edge_follow.count,
-            postCount: user.edge_owner_to_timeline_media.count
+            username: user.username || username,
+            fullName: user.full_name || username,
+            bio: user.biography || "",
+            avatar: user.profile_pic_url_hd || user.profile_pic_url,
+            followers: user.edge_followed_by?.count || 0,
+            following: user.edge_follow?.count || 0,
+            postCount: user.edge_owner_to_timeline_media?.count || 0
           };
-          mediaData = user.edge_owner_to_timeline_media.edges.map((edge: any) => ({
-            id: edge.node.id,
-            url: edge.node.display_url,
-            isVideo: edge.node.is_video,
-            videoUrl: edge.node.video_url || null,
-            caption: edge.node.edge_media_to_caption.edges[0]?.node.text || "",
-            type: edge.node.is_video ? "Reel" : "Post",
-            likes: edge.node.edge_liked_by.count,
-            comments: edge.node.edge_media_to_comment.count
+          mediaData = (user.edge_owner_to_timeline_media?.edges || []).map((edge: any) => ({
+            id: edge.node?.id || Math.random().toString(),
+            url: edge.node?.display_url,
+            isVideo: !!edge.node?.is_video,
+            videoUrl: edge.node?.video_url || null,
+            caption: edge.node?.edge_media_to_caption?.edges[0]?.node?.text || "",
+            type: edge.node?.is_video ? "Reel" : "Post",
+            likes: edge.node?.edge_liked_by?.count || 0,
+            comments: edge.node?.edge_media_to_comment?.count || 0
           }));
           
           return res.json({ profile: profileData, media: mediaData });
