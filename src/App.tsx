@@ -34,6 +34,7 @@ const formatNumber = (num: any) => {
 
 export default function App() {
   const [profileUrl, setProfileUrl] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -46,30 +47,38 @@ export default function App() {
 
   useEffect(() => {
     const fetchSuggestions = async () => {
-      if (profileUrl.length < 2) {
+      if ((profileUrl?.length || 0) < 2 || selectedUser?.username === profileUrl) {
         setSuggestions([]);
         return;
       }
       try {
         const res = await axios.get(`/api/search-suggestions?q=${profileUrl}`);
-        setSuggestions(res.data.users);
+        setSuggestions(res.data?.users || []);
       } catch (e) {
         console.error("Failed to fetch suggestions");
+        setSuggestions([]);
       }
     };
 
     const timeout = setTimeout(fetchSuggestions, 300);
     return () => clearTimeout(timeout);
-  }, [profileUrl]);
+  }, [profileUrl, selectedUser]);
 
-  const fetchProfile = async (username: string) => {
+  const fetchProfileData = async (username: string) => {
     setLoading(true);
     setShowSuggestions(false);
     setError(null);
     try {
       const response = await axios.post('/api/fetch-profile', { url: username });
-      setProfile(response.data.profile);
-      setMedia(response.data.media);
+      const profileData = response.data?.profile;
+      const mediaData = response.data?.media || [];
+      
+      if (!profileData) {
+        throw new Error("Profile data missing in response");
+      }
+
+      setProfile(profileData);
+      setMedia(mediaData);
       setIsModalOpen(true);
       confetti({
         particleCount: 150,
@@ -86,6 +95,20 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSuggestionClick = (user: any) => {
+    setProfileUrl(user.username);
+    setSelectedUser(user);
+    setShowSuggestions(false);
+    setSuggestions([]);
+  };
+
+  const clearSelection = () => {
+    setSelectedUser(null);
+    setProfileUrl('');
+    setProfile(null);
+    setError(null);
   };
 
   const handleDownloadAll = async () => {
@@ -150,34 +173,63 @@ export default function App() {
           </div>
 
           <div className="relative">
-            <div className="relative group">
+            <div className="relative group flex items-center">
+              {selectedUser && (
+                <motion.div 
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="absolute left-4 z-20 flex items-center gap-3 bg-zinc-800 pr-4 py-1.5 pl-1.5 rounded-full border border-pink-500/30"
+                >
+                  <img src={selectedUser.avatar} className="w-8 h-8 rounded-full object-cover" alt="" />
+                  <span className="text-sm font-bold text-pink-500">@{selectedUser.username}</span>
+                  <button onClick={clearSelection} className="hover:text-white text-zinc-500">
+                    <Layers size={14} className="rotate-45" />
+                  </button>
+                </motion.div>
+              )}
+              
               <input 
                 type="text"
-                placeholder="Type name or username..."
-                className="w-full bg-zinc-900/50 border-2 border-zinc-800 p-6 rounded-2xl text-xl md:text-2xl font-bold focus:outline-none focus:border-pink-600/50 transition-all placeholder:text-zinc-800 backdrop-blur-xl"
+                placeholder={selectedUser ? "" : "Type name or username..."}
+                className={cn(
+                  "w-full bg-zinc-900/50 border-2 border-zinc-800 p-6 rounded-2xl text-xl md:text-2xl font-bold focus:outline-none focus:border-pink-600/50 transition-all placeholder:text-zinc-800 backdrop-blur-xl",
+                  selectedUser && "pl-44 md:pl-56"
+                )}
                 value={profileUrl}
-                onChange={(e) => setProfileUrl(e.target.value)}
+                onChange={(e) => {
+                  setProfileUrl(e.target.value);
+                  if (selectedUser) setSelectedUser(null);
+                }}
                 onFocus={() => setShowSuggestions(true)}
               />
-              <div className="absolute right-6 top-1/2 -translate-y-1/2">
-                {loading ? <Loader2 className="animate-spin text-pink-600" size={32} /> : <Search size={32} className="text-zinc-800" />}
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-4">
+                {profileUrl.length > 0 && (
+                   <button 
+                    onClick={() => fetchProfileData(profileUrl)}
+                    disabled={loading}
+                    className="bg-pink-600 text-white px-8 h-12 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-pink-500 hover:scale-105 transition-all active:scale-95 shadow-lg shadow-pink-600/20 disabled:grayscale"
+                   >
+                     {loading ? <Loader2 className="animate-spin" size={18} /> : 'FETCH'}
+                   </button>
+                )}
+                {!loading && <Search size={24} className="text-zinc-800 hidden md:block" />}
               </div>
             </div>
 
             {/* Suggestions View */}
             <AnimatePresence>
-              {profileUrl.length >= 2 && suggestions.length > 0 && (
+              {(profileUrl?.length || 0) >= 2 && !selectedUser && (suggestions?.length || 0) > 0 && (
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.98, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.98 }}
                   className="absolute top-[calc(100%+12px)] left-0 right-0 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-50 divide-y divide-zinc-800/50"
                 >
-                  <div className="p-3 bg-zinc-800/20 text-[10px] font-bold uppercase tracking-widest text-zinc-600">Global Search Results</div>
-                  {suggestions.map((user) => (
+                  <div className="p-3 bg-zinc-800/20 text-[10px] font-bold uppercase tracking-widest text-zinc-600">Suggested Accounts</div>
+                  {(suggestions || []).map((user) => (
                     <button
                       key={user.username}
-                      onClick={() => fetchProfile(user.username)}
+                      onClick={() => handleSuggestionClick(user)}
                       className="w-full p-4 flex items-center gap-4 hover:bg-zinc-800 transition-colors group"
                     >
                       <div className="relative">
